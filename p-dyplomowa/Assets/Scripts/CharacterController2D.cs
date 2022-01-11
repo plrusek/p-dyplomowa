@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -14,31 +16,20 @@ public class CharacterController2D : MonoBehaviour
 
     const float k_GroundedRadius = .2f; // Radius of the overlap circle to determine if grounded
     private bool m_Grounded;            // Whether or not the player is grounded.
+    private bool m_Jumped;
     const float k_CeilingRadius = .2f; // Radius of the overlap circle to determine if the player can stand up
     private Rigidbody m_Rigidbody;
     private bool m_FacingRight = true;  // For determining which way the player is currently facing.
     private Vector3 m_Velocity = Vector3.zero;
 
-    [Header("Events")]
-    [Space]
-
-    public UnityEvent OnLandEvent;
-
-    [System.Serializable]
-    public class BoolEvent : UnityEvent<bool> { }
-
-    public BoolEvent OnCrouchEvent;
     private bool m_wasCrouching = false;
+
+    public Actions actions;
+    [SerializeField] private Animator animator;
 
     private void Awake()
     {
         m_Rigidbody = GetComponent<Rigidbody>();
-
-        if (OnLandEvent == null)
-            OnLandEvent = new UnityEvent();
-
-        if (OnCrouchEvent == null)
-            OnCrouchEvent = new BoolEvent();
     }
 
     private void FixedUpdate()
@@ -51,10 +42,13 @@ public class CharacterController2D : MonoBehaviour
             if (colliders[i].gameObject != gameObject)
             {
                 m_Grounded = true;
-                if (!wasGrounded)
-                    OnLandEvent.Invoke();
+                if (!wasGrounded && !m_Jumped)
+                {
+                    actions.Land();
+                }
             }
         }
+        m_Jumped = false;
     }
 
 
@@ -63,6 +57,7 @@ public class CharacterController2D : MonoBehaviour
         var movementSmoothing = m_MovementSmoothing;
         if (!m_Grounded && m_AirControl)
         {
+            actions.Jump();
             movementSmoothing = m_MovementSmoothing * 3f;
         }
         if (!crouch)
@@ -79,7 +74,6 @@ public class CharacterController2D : MonoBehaviour
                 if (!m_wasCrouching)
                 {
                     m_wasCrouching = true;
-                    OnCrouchEvent.Invoke(true);
                 }
                 move *= m_CrouchSpeed;
                 if (m_CrouchDisableCollider != null)
@@ -93,32 +87,40 @@ public class CharacterController2D : MonoBehaviour
                 if (m_wasCrouching)
                 {
                     m_wasCrouching = false;
-                    OnCrouchEvent.Invoke(false);
                 }
             }
             Vector3 targetVelocity = new Vector2(move * 10f, m_Rigidbody.velocity.y);
             m_Rigidbody.velocity = Vector3.SmoothDamp(m_Rigidbody.velocity, targetVelocity, ref m_Velocity, movementSmoothing);
-            if (move > 0 && !m_FacingRight)
+            var xspeed = Math.Abs(m_Rigidbody.velocity.x);
+            actions.Move(xspeed);
+            if (m_Grounded)
             {
-                Flip();
+                if (move > 0 && !m_FacingRight)
+                {
+                    Flip();
+                }
+                else if (move < 0 && m_FacingRight)
+                {
+                    Flip();
+                }
             }
-            else if (move < 0 && m_FacingRight)
-            {
-                Flip();
-            }
+            if (m_FacingRight)
+                transform.rotation = Quaternion.Lerp(transform.rotation, Quaternion.Euler(0, 90, 0), 0.2f);
+            else
+                transform.rotation = Quaternion.Lerp(transform.rotation, Quaternion.Euler(0, 270, 0), 0.2f);
         }
         if (m_Grounded && jump)
         {
+            m_Jumped = true;
             m_Grounded = false;
             m_Rigidbody.AddForce(new Vector2(0f, m_JumpForce));
+            actions.Jump();
         }
     }
 
     private void Flip()
     {
         m_FacingRight = !m_FacingRight;
-        Vector3 theScale = transform.localScale;
-        theScale.x *= -1;
-        transform.localScale = theScale;
+        Quaternion theRotation = transform.rotation;
     }
 }
